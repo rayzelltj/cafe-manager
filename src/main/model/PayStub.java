@@ -1,514 +1,221 @@
 package main.model;
+import main.tax.TaxConfig;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 
 public class PayStub {
-    private static final double VACATION_RATE = 0.04;
-
-    private static final double CPP_BASIC_EXEMPTION = 3500.0;
-    private static final double CPP_MAX = 71300.0;
-    private static final int CPP_MONTHS_PER_YEAR = 12;
-
-    private static final double F5A_FIRST_TERM_CAP = 678.00;
-    private static final double F5A_SECOND_TERM_CAP = 396.00;
-
-    private static final int PAY_PERIODS_PER_YEAR = 26;
-
-    private static final double FEDERAL_BASIC_PERSONAL_AMOUNT = 16129.00;
-    private static final double CPP_CREDIT_MAX = 3356.10;
-    private static final double EI_CREDIT_MAX = 1077.48;
-    private package main.model;
-
-import java.time.LocalDate;
-
-    public class PayStub {
-        private static final double VACATION_RATE = 0.04;
-
-        private static final double CPP_BASIC_EXEMPTION = 3500.0;
-        private static final double CPP_MAX = 71300.0;
-        private static final int CPP_MONTHS_PER_YEAR = 12;
-
-        private static final double F5A_FIRST_TERM_CAP = 678.00;
-        private static final double F5A_SECOND_TERM_CAP = 396.00;
-
-        private static final int PAY_PERIODS_PER_YEAR = 26;
-
-        private static final double FEDERAL_BASIC_PERSONAL_AMOUNT = 16129.00;
-        private static final double CPP_CREDIT_MAX = 3356.10;
-        private static final double EI_CREDIT_MAX = 1077.48;
-        private static final double CPP_RATE_BASE = 0.0495;
-        private static final double CPP_RATE_TOTAL = 0.0595;
-        private static final double EI_RATE = 0.0166; // 2025 employee EI rate
-        private static final double CANADA_EMPLOYMENT_AMOUNT = 1432.00;
-
-        // ===== Instance Variables =====
-        private Employee employee;
-        private LocalDate periodStart;
-        private LocalDate periodEnd;
-        private LocalDate chequeDate;
-
-        private double hoursWorked;
-        private double hourlyRate;
-
-        private double grossHourlyPay;      // Current gross pay
-        private double vacPay;              // Vacation pay paid out
-        private double cpp;                 // CPP deduction
-        private double federalIncomeTax;    // Deduction
-        private double provincialIncomeTax; // Deduction
-        private double netPay;              // Gross - deductions
-
-        // Year-To-Date Tracking
-        private double grossPayYTD;
-        private double vacPayYTD;
-        private double cppYTD;
-        private double incomeTaxYTD;
-        private double netPayYTD;
-
-        public PayStub(Employee employee, LocalDate periodStart, LocalDate periodEnd, LocalDate chequeDate, double hoursWorked, double hourlyRate){
-            this.employee = employee;
-            this.periodStart = periodStart;
-            this.periodEnd = periodEnd;
-            this.chequeDate = chequeDate;
-            this.hoursWorked = hoursWorked;
-            this.hourlyRate = hourlyRate;
-
-        }
-
-        public void calculateAll() {
-            this.grossHourlyPay = calculateGrossHourlyPay();
-            this.vacPay = calculateVacPay();
-            this.cpp = calculateCPP();
-            this.federalIncomeTax = calculateFederalTaxPerPeriod();
-            this.provincialIncomeTax = calculateProvincialTaxBC();
-        }
-
-        public double calculateGrossHourlyPay() {
-            return hoursWorked * hourlyRate;
-        }
-
-        public double calculateVacPay() {
-            return grossHourlyPay * VACATION_RATE;
-        }
-
-        public double calculateCPP() {
-            final double CPP_RATE = 0.0595;
-            final double CPP_EXEMPTION_PER_PERIOD = CPP_BASIC_EXEMPTION / PAY_PERIODS_PER_YEAR;
-
-            return -((this.grossHourlyPay - CPP_EXEMPTION_PER_PERIOD) * CPP_RATE);
-        }
-        // Step 1:
-        // EFFECTS: calculates annual taxable income (A)
-        // A = [P × (I – F – F2 – F5A – U1 )] – HD – F1
-        // P = # of pay periods in a year = 26
-        // I = grossHourlyPay + vacPay
-        // F = Payroll deductions for the pay period for employee contributions to a
-        //     registered pension plan (RPP) for current and past services, a registered
-        //     retirement savings plan (RRSP), to a pooled registered pension plan (PRPP),
-        //     or a retirement compensation arrangement (RCA). For tax deduction purposes,
-        //     employers can deduct amounts contributed to an RPP, RRSP, PRPP, or RCA by or
-        //     on behalf of an employee to determine the employee's taxable income = 0
-        // F2 = Alimony or maintenance payments required by a legal document dated before
-        //      May 1, 1997, to be payroll-deducted authorized by a tax services office or tax centre
-        //    = 0
-        // F5A = F5* × ((PI – B)/PI)
-        // U1 = 0
-        // HD = Annual deduction for living in a prescribed zone, as shown on Form TD1
-        //    = 0
-        // F1 = Annual deductions such as child care expenses and support payments requested by an
-        //    = employee or pensioner and authorized by a tax services office or tax centre
-        //    = 0
-
-        public double calculateAnnualTaxableIncome() {
-            double P = PAY_PERIODS_PER_YEAR;
-            double I = this.grossHourlyPay + this.vacPay;
-            double F = 0;
-            double F2 = 0;
-            double F5A = calculateF5A();
-            double U1 = 0;
-            double HD = 0;
-            double F1 = 0;
-
-            return (P * (I - F - F2 - F5A - U1)) - HD - F1; // A
-        }
-
-        private double calculateF5A() {
-            // Annualized total remuneration
-            double I1 = (this.grossHourlyPay + this.vacPay) * PAY_PERIODS_PER_YEAR; // annual pay
-            double PI = this.grossHourlyPay + this.vacPay; // pensionable income this pay period
-            double B = 0;  // Non-periodic bonuses — assumed 0 unless otherwise known
-            double PM = CPP_MONTHS_PER_YEAR; // 12 months/year
-
-            // First term: 0.0100 × (I1 – 3,500), max $678 × (PM/12)
-            double firstTermBase = I1 - CPP_BASIC_EXEMPTION;
-            double firstTerm = 0.0100 * Math.max(firstTermBase, 0);
-            double firstTermCap = 678.00 * (PM / (double) CPP_MONTHS_PER_YEAR);
-            firstTerm = Math.min(firstTerm, firstTermCap);
-
-            // Second term: 0.04 × (I1 – 71,300 × (PM/12)), max $396 × (PM/12)
-            double secondTermBase = I1 - (CPP_MAX * (PM / (double) CPP_MONTHS_PER_YEAR));
-            double secondTerm = 0.04 * Math.max(secondTermBase, 0);
-            double secondTermCap = 396.00 * (PM / (double) CPP_MONTHS_PER_YEAR);
-            secondTerm = Math.min(secondTerm, secondTermCap);
-
-            // F5* = firstTerm + secondTerm
-            double F5star = firstTerm + secondTerm;
-
-            // F5A = F5* × ((PI – B) / PI)
-            return (PI == 0) ? 0 : F5star * ((PI - B) / PI);
-        }
-
-        // Updated federal tax calculation to match PDOC and return per period tax rounded to cent
-        public double calculateFederalTaxPerPeriod() {
-            double A = calculateAnnualTaxableIncome();
-
-            double R = getFederalTaxRate(A);
-
-            // Use TD1 federal basic personal amount from your example
-            double K1 = roundToTwoDecimals(0.15 * FEDERAL_BASIC_PERSONAL_AMOUNT);
-
-            // Annualized CPP contributions at base rate for the credit, capped at max
-            double annualPensionableEarnings = (grossHourlyPay + vacPay) * PAY_PERIODS_PER_YEAR;
-            double cppCreditBase = (annualPensionableEarnings - CPP_BASIC_EXEMPTION) * CPP_RATE_BASE;
-            cppCreditBase = Math.max(0, cppCreditBase);
-            cppCreditBase = Math.min(cppCreditBase, CPP_CREDIT_MAX);
-            cppCreditBase = roundToTwoDecimals(cppCreditBase);
-
-            // Annualized EI contributions capped at max
-            double annualEIContribution = annualPensionableEarnings * EI_RATE;
-            annualEIContribution = Math.min(annualEIContribution, EI_CREDIT_MAX);
-            annualEIContribution = roundToTwoDecimals(annualEIContribution);
-
-            double K2 = 0.15 * (cppCreditBase + annualEIContribution);
-            K2 = roundToTwoDecimals(K2);
-
-            double K3 = 0.0;
-
-            double K4 = Math.min(0.15 * A, 0.15 * CANADA_EMPLOYMENT_AMOUNT);
-            K4 = roundToTwoDecimals(K4);
-
-            double K = 0.0;
-
-            double T3 = (R * A) - K - K1 - K2 - K3 - K4;
-            if (T3 < 0) T3 = 0;
-
-            // Federal tax per pay period
-            double federalTaxPerPeriod = T3 / PAY_PERIODS_PER_YEAR;
-
-            return roundToTwoDecimals(federalTaxPerPeriod);
-        }
-
-        private double getFederalTaxRate(double income) {
-            // 2025 Federal Tax Brackets (approx.)
-            if (income <= 55867) return 0.15;
-            if (income <= 111733) return 0.205;
-            if (income <= 173205) return 0.26;
-            if (income <= 246752) return 0.29;
-            return 0.33;
-        }
-
-        public double calculateProvincialTaxBC() {
-            final double BC_TAX_RATE = 0.0506;
-            final double BC_BASIC_PERSONAL_AMOUNT = 12932.00;
-            final double BC_CANADA_EMPLOYMENT_AMOUNT = 1432.00;
-
-            double A = calculateAnnualTaxableIncome();
-
-            // KP = 0 for BC
-            double KP = 0.0;
-
-            // K1P = BC lowest tax rate * BC basic personal amount
-            double K1P = BC_TAX_RATE * BC_BASIC_PERSONAL_AMOUNT;
-
-            // Calculate annual pensionable earnings (same as federal)
-            double annualPensionableEarnings = (grossHourlyPay + vacPay) * PAY_PERIODS_PER_YEAR;
-
-            // Calculate CPP credit base for BC
-            double cppCreditBase = (annualPensionableEarnings - CPP_BASIC_EXEMPTION) * CPP_RATE_BASE;
-            cppCreditBase = Math.max(0, cppCreditBase);
-            cppCreditBase = Math.min(cppCreditBase, CPP_CREDIT_MAX);
-
-            // Calculate EI credit for BC
-            double annualEIContribution = annualPensionableEarnings * EI_RATE;
-            annualEIContribution = Math.min(annualEIContribution, EI_CREDIT_MAX);
-
-            // K2P = BC lowest tax rate * (CPP credit + EI credit)
-            double K2P = BC_TAX_RATE * (cppCreditBase + annualEIContribution);
-
-            // K3P = 0 for your case
-            double K3P = 0.0;
-
-            // K4P = BC lowest tax rate * Canada Employment Amount
-            double K4P = BC_TAX_RATE * BC_CANADA_EMPLOYMENT_AMOUNT;
-
-            // Calculate T4
-            double T4 = (BC_TAX_RATE * A) - KP - K1P - K2P - K3P - K4P;
-            if (T4 < 0) T4 = 0;
-
-            // Calculate surtax S based on A
-            double S;
-            if (A <= 25020) {
-                S = Math.min(T4, 562);
-            } else if (A <= 40807) {
-                S = Math.min(T4, 562 - ((A - 25020) * 0.0356));
-            } else {
-                S = 0;
-            }
-
-            // V1, V2, LCP assumed zero for BC
-            double V1 = 0.0;
-            double V2 = 0.0;
-            double LCP = 0.0;
-
-            // Calculate T2
-            double T2 = T4 + V1 + V2 - S - (PAY_PERIODS_PER_YEAR * LCP);
-            if (T2 < 0) T2 = 0;
-
-            // Provincial tax per pay period, rounded to two decimals
-            return roundToTwoDecimals(T2 / PAY_PERIODS_PER_YEAR);
-        }
-
-        // Helper to round to 2 decimal places (cents)
-        private double roundToTwoDecimals(double value) {
-            return Math.round(value * 100.0) / 100.0;
-        }
-
-
-    }
-    static final double CPP_RATE_BASE = 0.0495;
-    private static final double CPP_RATE_TOTAL = 0.0595;
-    private static final double EI_RATE = 0.0166; // 2025 employee EI rate
-    private static final double CANADA_EMPLOYMENT_AMOUNT = 1432.00;
-
-    // ===== Instance Variables =====
-    private Employee employee;
-    private LocalDate periodStart;
-    private LocalDate periodEnd;
-    private LocalDate chequeDate;
-
-    private double hoursWorked;
-    private double hourlyRate;
-
-    private double grossHourlyPay;      // Current gross pay
-    private double vacPay;              // Vacation pay paid out
-    private double cpp;                 // CPP deduction
-    private double federalIncomeTax;    // Deduction
-    private double provincialIncomeTax; // Deduction
-    private double netPay;              // Gross - deductions
-
-    // Year-To-Date Tracking
-    private double grossPayYTD;
-    private double vacPayYTD;
-    private double cppYTD;
-    private double incomeTaxYTD;
-    private double netPayYTD;
-
-    public PayStub(Employee employee, LocalDate periodStart, LocalDate periodEnd, LocalDate chequeDate, double hoursWorked, double hourlyRate){
+    private final Employee employee;
+    private final BigDecimal hoursWorked;
+    private final BigDecimal hourlyRate;
+    private final BigDecimal vacationPayRate;
+    private final LocalDate payPeriodStart;
+    private final LocalDate payPeriodEnd;
+
+    private BigDecimal hourlyPay = BigDecimal.ZERO;
+    private BigDecimal vacationPay = BigDecimal.ZERO;
+    private BigDecimal grossPay = BigDecimal.ZERO;
+
+    private BigDecimal cppDeduction = BigDecimal.ZERO;
+    private BigDecimal eiDeduction = BigDecimal.ZERO;
+    private BigDecimal federalTaxDeduction = BigDecimal.ZERO;
+    private BigDecimal provincialTaxDeduction = BigDecimal.ZERO;
+    private BigDecimal totalIncomeTaxDeduction = BigDecimal.ZERO;
+    private BigDecimal netPay = BigDecimal.ZERO;
+
+    // YTD before this pay
+    private BigDecimal ytdGrossBefore = BigDecimal.ZERO;
+    private BigDecimal ytdCppBefore = BigDecimal.ZERO;
+    private BigDecimal ytdEiBefore = BigDecimal.ZERO;
+    private BigDecimal ytdIncomeTaxBefore = BigDecimal.ZERO;
+
+    private static final RoundingMode RM = RoundingMode.HALF_UP;
+
+
+    public PayStub(Employee employee, double hoursWorked, double hourlyRate, double vacationPayRate,
+                   LocalDate payPeriodStart, LocalDate payPeriodEnd) {
         this.employee = employee;
-        this.periodStart = periodStart;
-        this.periodEnd = periodEnd;
-        this.chequeDate = chequeDate;
-        this.hoursWorked = hoursWorked;
-        this.hourlyRate = hourlyRate;
-        
+        this.hoursWorked = BigDecimal.valueOf(hoursWorked);
+        this.hourlyRate = BigDecimal.valueOf(hourlyRate);
+        this.vacationPayRate = BigDecimal.valueOf(vacationPayRate);
+        this.payPeriodStart = payPeriodStart;
+        this.payPeriodEnd = payPeriodEnd;
+    }
+
+    public void setYtdBefore(double ytdGross, double ytdCpp, double ytdEi, double ytdIncomeTax) {
+        this.ytdGrossBefore = BigDecimal.valueOf(ytdGross);
+        this.ytdCppBefore = BigDecimal.valueOf(ytdCpp);
+        this.ytdEiBefore = BigDecimal.valueOf(ytdEi);
+        this.ytdIncomeTaxBefore = BigDecimal.valueOf(ytdIncomeTax);
     }
 
     public void calculateAll() {
-        this.grossHourlyPay = calculateGrossHourlyPay();
-        this.vacPay = calculateVacPay();
-        this.cpp = calculateCPP();
-        this.federalIncomeTax = calculateFederalTaxPerPeriod();
-        this.provincialIncomeTax = calculateProvincialTaxBC();
+        calculateHourlyPay();
+        calculateVacationPay();
+        calculateGrossPay();
+        calculateCPP();
+        calculateEI();
+        calculateIncomeTaxes();
+        calculateNetPay();
     }
 
-    public double calculateGrossHourlyPay() {
-        return hoursWorked * hourlyRate;
+    private void calculateHourlyPay() {
+        this.hourlyPay = this.hoursWorked.multiply(this.hourlyRate);
     }
 
-    public double calculateVacPay() {
-        return grossHourlyPay * VACATION_RATE;
+    private void calculateVacationPay() {
+        this.vacationPay = this.hourlyPay.multiply(this.vacationPayRate);
     }
 
-    public double calculateCPP() {
-        final double CPP_RATE = 0.0595;
-        final double CPP_EXEMPTION_PER_PERIOD = CPP_BASIC_EXEMPTION / PAY_PERIODS_PER_YEAR;
-
-        return -((this.grossHourlyPay - CPP_EXEMPTION_PER_PERIOD) * CPP_RATE);
-    }
-    // Step 1:
-    // EFFECTS: calculates annual taxable income (A)
-    // A = [P × (I – F – F2 – F5A – U1 )] – HD – F1
-    // P = # of pay periods in a year = 26
-    // I = grossHourlyPay + vacPay
-    // F = Payroll deductions for the pay period for employee contributions to a
-    //     registered pension plan (RPP) for current and past services, a registered
-    //     retirement savings plan (RRSP), to a pooled registered pension plan (PRPP),
-    //     or a retirement compensation arrangement (RCA). For tax deduction purposes,
-    //     employers can deduct amounts contributed to an RPP, RRSP, PRPP, or RCA by or
-    //     on behalf of an employee to determine the employee's taxable income = 0
-    // F2 = Alimony or maintenance payments required by a legal document dated before
-    //      May 1, 1997, to be payroll-deducted authorized by a tax services office or tax centre
-    //    = 0
-    // F5A = F5* × ((PI – B)/PI)
-    // U1 = 0
-    // HD = Annual deduction for living in a prescribed zone, as shown on Form TD1
-    //    = 0
-    // F1 = Annual deductions such as child care expenses and support payments requested by an
-    //    = employee or pensioner and authorized by a tax services office or tax centre
-    //    = 0
-
-    public double calculateAnnualTaxableIncome() {
-        double P = PAY_PERIODS_PER_YEAR;
-        double I = this.grossHourlyPay + this.vacPay;
-        double F = 0;
-        double F2 = 0;
-        double F5A = calculateF5A();
-        double U1 = 0;
-        double HD = 0;
-        double F1 = 0;
-
-        return (P * (I - F - F2 - F5A - U1)) - HD - F1; // A
+    private void calculateGrossPay() {
+        this.grossPay = this.hourlyPay.add(this.vacationPay).setScale(2, RM);
     }
 
-    private double calculateF5A() {
-        // Annualized total remuneration
-        double I1 = (this.grossHourlyPay + this.vacPay) * PAY_PERIODS_PER_YEAR; // annual pay
-        double PI = this.grossHourlyPay + this.vacPay; // pensionable income this pay period
-        double B = 0;  // Non-periodic bonuses — assumed 0 unless otherwise known
-        double PM = CPP_MONTHS_PER_YEAR; // 12 months/year
+    private void calculateCPP() {
+        BigDecimal basicExemptionPerPeriod = TaxConstants.CPP_ANNUAL_BASIC_EXEMPTION
+                .divide(BigDecimal.valueOf(TaxConstants.PAY_PERIODS_BIWEEKLY), 10, RM);
 
-        // First term: 0.0100 × (I1 – 3,500), max $678 × (PM/12)
-        double firstTermBase = I1 - CPP_BASIC_EXEMPTION;
-        double firstTerm = 0.0100 * Math.max(firstTermBase, 0);
-        double firstTermCap = 678.00 * (PM / (double) CPP_MONTHS_PER_YEAR);
-        firstTerm = Math.min(firstTerm, firstTermCap);
-
-        // Second term: 0.04 × (I1 – 71,300 × (PM/12)), max $396 × (PM/12)
-        double secondTermBase = I1 - (CPP_MAX * (PM / (double) CPP_MONTHS_PER_YEAR));
-        double secondTerm = 0.04 * Math.max(secondTermBase, 0);
-        double secondTermCap = 396.00 * (PM / (double) CPP_MONTHS_PER_YEAR);
-        secondTerm = Math.min(secondTerm, secondTermCap);
-
-        // F5* = firstTerm + secondTerm
-        double F5star = firstTerm + secondTerm;
-
-        // F5A = F5* × ((PI – B) / PI)
-        return (PI == 0) ? 0 : F5star * ((PI - B) / PI);
-    }
-
-    // Updated federal tax calculation to match PDOC and return per period tax rounded to cent
-    public double calculateFederalTaxPerPeriod() {
-        double A = calculateAnnualTaxableIncome();
-
-        double R = getFederalTaxRate(A);
-
-        // Use TD1 federal basic personal amount from your example
-        double K1 = roundToTwoDecimals(0.15 * FEDERAL_BASIC_PERSONAL_AMOUNT);
-
-        // Annualized CPP contributions at base rate for the credit, capped at max
-        double annualPensionableEarnings = (grossHourlyPay + vacPay) * PAY_PERIODS_PER_YEAR;
-        double cppCreditBase = (annualPensionableEarnings - CPP_BASIC_EXEMPTION) * CPP_RATE_BASE;
-        cppCreditBase = Math.max(0, cppCreditBase);
-        cppCreditBase = Math.min(cppCreditBase, CPP_CREDIT_MAX);
-        cppCreditBase = roundToTwoDecimals(cppCreditBase);
-
-        // Annualized EI contributions capped at max
-        double annualEIContribution = annualPensionableEarnings * EI_RATE;
-        annualEIContribution = Math.min(annualEIContribution, EI_CREDIT_MAX);
-        annualEIContribution = roundToTwoDecimals(annualEIContribution);
-
-        double K2 = 0.15 * (cppCreditBase + annualEIContribution);
-        K2 = roundToTwoDecimals(K2);
-
-        double K3 = 0.0;
-
-        double K4 = Math.min(0.15 * A, 0.15 * CANADA_EMPLOYMENT_AMOUNT);
-        K4 = roundToTwoDecimals(K4);
-
-        double K = 0.0;
-
-        double T3 = (R * A) - K - K1 - K2 - K3 - K4;
-        if (T3 < 0) T3 = 0;
-
-        // Federal tax per pay period
-        double federalTaxPerPeriod = T3 / PAY_PERIODS_PER_YEAR;
-
-        return roundToTwoDecimals(federalTaxPerPeriod);
-    }
-
-    private double getFederalTaxRate(double income) {
-        // 2025 Federal Tax Brackets (approx.)
-        if (income <= 55867) return 0.15;
-        if (income <= 111733) return 0.205;
-        if (income <= 173205) return 0.26;
-        if (income <= 246752) return 0.29;
-        return 0.33;
-    }
-
-    public double calculateProvincialTaxBC() {
-        final double BC_TAX_RATE = 0.0506;
-        final double BC_BASIC_PERSONAL_AMOUNT = 12932.00;
-        final double BC_CANADA_EMPLOYMENT_AMOUNT = 1432.00;
-
-        double A = calculateAnnualTaxableIncome();
-
-        // KP = 0 for BC
-        double KP = 0.0;
-
-        // K1P = BC lowest tax rate * BC basic personal amount
-        double K1P = BC_TAX_RATE * BC_BASIC_PERSONAL_AMOUNT;
-
-        // Calculate annual pensionable earnings (same as federal)
-        double annualPensionableEarnings = (grossHourlyPay + vacPay) * PAY_PERIODS_PER_YEAR;
-
-        // Calculate CPP credit base for BC
-        double cppCreditBase = (annualPensionableEarnings - CPP_BASIC_EXEMPTION) * CPP_RATE_BASE;
-        cppCreditBase = Math.max(0, cppCreditBase);
-        cppCreditBase = Math.min(cppCreditBase, CPP_CREDIT_MAX);
-
-        // Calculate EI credit for BC
-        double annualEIContribution = annualPensionableEarnings * EI_RATE;
-        annualEIContribution = Math.min(annualEIContribution, EI_CREDIT_MAX);
-
-        // K2P = BC lowest tax rate * (CPP credit + EI credit)
-        double K2P = BC_TAX_RATE * (cppCreditBase + annualEIContribution);
-
-        // K3P = 0 for your case
-        double K3P = 0.0;
-
-        // K4P = BC lowest tax rate * Canada Employment Amount
-        double K4P = BC_TAX_RATE * BC_CANADA_EMPLOYMENT_AMOUNT;
-
-        // Calculate T4
-        double T4 = (BC_TAX_RATE * A) - KP - K1P - K2P - K3P - K4P;
-        if (T4 < 0) T4 = 0;
-
-        // Calculate surtax S based on A
-        double S;
-        if (A <= 25020) {
-            S = Math.min(T4, 562);
-        } else if (A <= 40807) {
-            S = Math.min(T4, 562 - ((A - 25020) * 0.0356));
-        } else {
-            S = 0;
+        BigDecimal pensionable = this.grossPay.subtract(basicExemptionPerPeriod);
+        if (pensionable.compareTo(BigDecimal.ZERO) <= 0) {
+            this.cppDeduction = BigDecimal.ZERO.setScale(2, RM);
+            return;
         }
 
-        // V1, V2, LCP assumed zero for BC
-        double V1 = 0.0;
-        double V2 = 0.0;
-        double LCP = 0.0;
+        BigDecimal raw = pensionable.multiply(TaxConstants.CPP_RATE);
 
-        // Calculate T2
-        double T2 = T4 + V1 + V2 - S - (PAY_PERIODS_PER_YEAR * LCP);
-        if (T2 < 0) T2 = 0;
+        // Cap using remaining annual CPP contribution room (best-effort using YTD)
+        BigDecimal annualMax = TaxConstants.CPP_MAX_CONTRIBUTION.add(TaxConstants.CPP_MAX_ADDITIONAL_CONTRIBUTION);
+        BigDecimal remainingAnnual = annualMax.subtract(this.ytdCppBefore);
+        if (remainingAnnual.compareTo(BigDecimal.ZERO) <= 0) {
+            this.cppDeduction = BigDecimal.ZERO.setScale(2, RM);
+            return;
+        }
 
-        // Provincial tax per pay period, rounded to two decimals
-        return roundToTwoDecimals(T2 / PAY_PERIODS_PER_YEAR);
+        BigDecimal capped = raw.min(remainingAnnual);
+        this.cppDeduction = capped.setScale(2, RM);
     }
 
-    // Helper to round to 2 decimal places (cents)
-    private double roundToTwoDecimals(double value) {
-        return Math.round(value * 100.0) / 100.0;
+    private void calculateEI() {
+        if (employee != null && employee.isEiExempt()) {
+            this.eiDeduction = BigDecimal.ZERO.setScale(2, RM);
+            return;
+        }
+
+        BigDecimal annualGross = this.grossPay.multiply(BigDecimal.valueOf(TaxConstants.PAY_PERIODS_BIWEEKLY));
+        BigDecimal cappedInsurable = annualGross.min(TaxConstants.EI_MAX_INSURABLE_EARNINGS);
+        BigDecimal annualEi = cappedInsurable.multiply(TaxConstants.EI_RATE);
+
+        BigDecimal remainingAnnualEi = annualEi.subtract(this.ytdEiBefore);
+        if (remainingAnnualEi.compareTo(BigDecimal.ZERO) <= 0) {
+            this.eiDeduction = BigDecimal.ZERO.setScale(2, RM);
+            return;
+        }
+
+        BigDecimal perPeriod = remainingAnnualEi.divide(BigDecimal.valueOf(TaxConstants.PAY_PERIODS_BIWEEKLY), 10, RM);
+        this.eiDeduction = perPeriod.setScale(2, RM);
     }
 
+    private void calculateIncomeTaxes() {
+        final TaxConfig cfg = main.tax.TaxConfigProvider.forPayDate(this.payPeriodEnd);
 
+        // ---- Annualization helpers ----
+        final BigDecimal P = BigDecimal.valueOf(TaxConstants.PAY_PERIODS_BIWEEKLY);
+        final boolean eiExempt = (employee != null && employee.isEiExempt());
+
+        // Per-period statutory deductions you already computed
+        BigDecimal perPeriodCpp = this.cppDeduction;   // NOTE: this is TOTAL CPP (base + additional) in your implementation
+        BigDecimal perPeriodEi  = this.eiDeduction;    // 0 if EI-exempt per your earlier logic
+
+        // Annual gross employment income (for A and later for CEA/K4)
+        BigDecimal annualGross = this.grossPay.multiply(P);
+
+        // F5A (additional CPP) estimated from total per-period CPP
+        BigDecimal f5aAnnual = TaxCalculator.f5aFromPerPeriodCpp(perPeriodCpp);
+
+        // A: annual taxable employment income (simplified for your scenario)
+        BigDecimal annualTaxableIncome = annualGross.subtract(f5aAnnual);
+        if (annualTaxableIncome.signum() < 0) annualTaxableIncome = BigDecimal.ZERO;
+
+        // Per-period taxable income (for provincial step you’re using)
+        BigDecimal perPeriodTaxable = annualTaxableIncome.divide(P, 10, RM);
+
+        // ---- PDOC-style projections for K2 inputs ----
+
+        // Project TOTAL CPP from per-period then convert to BASE CPP for K2
+        BigDecimal projectedAnnualCppTotal = perPeriodCpp.multiply(P);
+        BigDecimal projectedAnnualCppBase =
+                projectedAnnualCppTotal
+                        .multiply(TaxConstants.CPP_BASE_RATE.divide(TaxConstants.CPP_RATE, 12, RM));
+        BigDecimal cappedAnnualCppBaseForK2 =
+                projectedAnnualCppBase.min(TaxConstants.CPP_MAX_CONTRIBUTION);
+
+        // Project EI (0 if EI-exempt), then cap
+        BigDecimal projectedAnnualEi = eiExempt ? BigDecimal.ZERO : perPeriodEi.multiply(P);
+        BigDecimal cappedAnnualEiForK2 =
+                eiExempt ? BigDecimal.ZERO : projectedAnnualEi.min(TaxConstants.EI_MAX_CONTRIBUTION);
+
+        // ---- Federal tax (per period) ----
+        this.federalTaxDeduction = TaxCalculator.federalPerPeriodFromAnnual(
+                annualTaxableIncome,
+                cappedAnnualCppBaseForK2,
+                cappedAnnualEiForK2,
+                annualGross,
+                eiExempt,
+                cfg
+        );
+
+        // ---- Provincial tax (per period) ----
+        // Your provincial method expects a per-period "taxable" base;
+        // you derived perPeriodTaxable above from annual A; that’s consistent with your approach.
+        BigDecimal bcBeforeCredits = TaxCalculator.provincialPerPeriod(
+                perPeriodTaxable,
+                this.cppDeduction,
+                this.eiDeduction,
+                eiExempt,
+                cfg
+        );
+
+        // BC tax reduction S computed on ANNUAL taxable income and applied per-period
+        BigDecimal s = calculateBCReduction(annualTaxableIncome, bcBeforeCredits);
+
+        this.provincialTaxDeduction = bcBeforeCredits.subtract(s).max(BigDecimal.ZERO).setScale(2, RM);
+
+        // ---- Totals ----
+        this.totalIncomeTaxDeduction = this.federalTaxDeduction.add(this.provincialTaxDeduction).setScale(2, RM);
+        BigDecimal totalDeductions = this.cppDeduction.add(this.eiDeduction).add(this.totalIncomeTaxDeduction);
+        this.netPay = this.grossPay.subtract(totalDeductions).setScale(2, RM);
+    }
+
+    private BigDecimal calculateBCReduction(BigDecimal annualTaxableIncome, BigDecimal t4PerPeriod) {
+        // Convert PDOC S calculation (annual) to per-period by computing S_annual then dividing by periods
+        BigDecimal sAnnual;
+        if (annualTaxableIncome.compareTo(TaxConstants.BC_TAX_REDUCTION_THRESHOLD_1) <= 0) {
+            sAnnual = TaxConstants.BC_TAX_REDUCTION_AMOUNT.min(t4PerPeriod.multiply(BigDecimal.valueOf(TaxConstants.PAY_PERIODS_BIWEEKLY)));
+        } else if (annualTaxableIncome.compareTo(TaxConstants.BC_TAX_REDUCTION_THRESHOLD_2) <= 0) {
+            BigDecimal reduction = TaxConstants.BC_TAX_REDUCTION_AMOUNT.subtract(
+                    annualTaxableIncome.subtract(TaxConstants.BC_TAX_REDUCTION_THRESHOLD_1).multiply(TaxConstants.BC_TAX_REDUCTION_RATE)
+            );
+            if (reduction.compareTo(BigDecimal.ZERO) < 0) reduction = BigDecimal.ZERO;
+            sAnnual = reduction.min(t4PerPeriod.multiply(BigDecimal.valueOf(TaxConstants.PAY_PERIODS_BIWEEKLY)));
+        } else {
+            sAnnual = BigDecimal.ZERO;
+        }
+
+        return sAnnual.divide(BigDecimal.valueOf(TaxConstants.PAY_PERIODS_BIWEEKLY), 2, RM);
+    }
+
+    private void calculateNetPay() {
+        BigDecimal totalDeductions = this.cppDeduction.add(this.eiDeduction).add(this.totalIncomeTaxDeduction);
+        this.netPay = this.grossPay.subtract(totalDeductions).setScale(2, RM);
+    }
+
+    // Getters (double) for compatibility with existing tests
+    public double getGrossPay() { return this.grossPay.doubleValue(); }
+    public double getCPPDeduction() { return this.cppDeduction.doubleValue(); }
+    public double getEIDeduction() { return this.eiDeduction.doubleValue(); }
+    public double getFederalTaxDeduction() { return this.federalTaxDeduction.doubleValue(); }
+    public double getProvincialTaxDeduction() { return this.provincialTaxDeduction.doubleValue(); }
+    public double getTotalIncomeTaxDeduction() { return this.totalIncomeTaxDeduction.doubleValue(); }
+    public double getNetPay() { return this.netPay.doubleValue(); }
 }

@@ -4,19 +4,13 @@ import java.util.ArrayList;
 
 public class Employee {
     private final String name;
-    private ArrayList<PayStub> payStubHistory;
+    private final boolean eiExempt; // owner-relative or other EI exemption
 
-    public Employee(String name) {
+    public Employee(String name, boolean eiExempt) {
         this.name = name;
-        this.payStubHistory = new ArrayList<>();
+        this.eiExempt = eiExempt;
     }
 
-    public PayStub getLatestPayStub() {
-        if (payStubHistory.isEmpty()) return null;
-        return payStubHistory.get(payStubHistory.size() - 1);
-    }
-
-    public void addPayStub(PayStub stub) {
-        this.payStubHistory.add(stub);
-    }
+    public String getName() { return name; }
+    public boolean isEiExempt() { return eiExempt; }
 }
