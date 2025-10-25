@@ -102,18 +102,16 @@ public class PayStub {
             return;
         }
 
-        BigDecimal annualGross = this.grossPay.multiply(BigDecimal.valueOf(TaxConstants.PAY_PERIODS_BIWEEKLY));
-        BigDecimal cappedInsurable = annualGross.min(TaxConstants.EI_MAX_INSURABLE_EARNINGS);
-        BigDecimal annualEi = cappedInsurable.multiply(TaxConstants.EI_RATE);
+        BigDecimal insurableThisPeriod = this.grossPay; // includes vacation, stat, etc., if insurable
+        BigDecimal periodEI = insurableThisPeriod.multiply(TaxConstants.EI_RATE);
 
-        BigDecimal remainingAnnualEi = annualEi.subtract(this.ytdEiBefore);
-        if (remainingAnnualEi.compareTo(BigDecimal.ZERO) <= 0) {
+        BigDecimal remaining = TaxConstants.EI_MAX_CONTRIBUTION.subtract(this.ytdEiBefore);
+        if (remaining.signum() <= 0) {
             this.eiDeduction = BigDecimal.ZERO.setScale(2, RM);
             return;
         }
 
-        BigDecimal perPeriod = remainingAnnualEi.divide(BigDecimal.valueOf(TaxConstants.PAY_PERIODS_BIWEEKLY), 10, RM);
-        this.eiDeduction = perPeriod.setScale(2, RM);
+        this.eiDeduction = periodEI.min(remaining).setScale(2, RM);
     }
 
     private void calculateIncomeTaxes() {
