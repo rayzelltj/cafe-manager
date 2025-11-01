@@ -4,16 +4,16 @@ import main.tax.TaxConfig;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.List;
 
 public class PayStub {
     private final Employee employee;
-    private final BigDecimal hoursWorked;
-    private final BigDecimal hourlyRate;
+    private final List<EarningSlice> earningSlices;
     private final BigDecimal vacationPayRate;
     private final LocalDate payPeriodStart;
     private final LocalDate payPeriodEnd;
 
-    private BigDecimal hourlyPay = BigDecimal.ZERO;
+    private BigDecimal totalHourlyPay = BigDecimal.ZERO;
     private BigDecimal vacationPay = BigDecimal.ZERO;
     private BigDecimal grossPay = BigDecimal.ZERO;
 
@@ -33,11 +33,10 @@ public class PayStub {
     private static final RoundingMode RM = RoundingMode.HALF_UP;
 
 
-    public PayStub(Employee employee, double hoursWorked, double hourlyRate, double vacationPayRate,
+    public PayStub(Employee employee, List<EarningSlice> earningSlices, double vacationPayRate,
                    LocalDate payPeriodStart, LocalDate payPeriodEnd) {
         this.employee = employee;
-        this.hoursWorked = BigDecimal.valueOf(hoursWorked);
-        this.hourlyRate = BigDecimal.valueOf(hourlyRate);
+        this.earningSlices = List.copyOf(earningSlices);
         this.vacationPayRate = BigDecimal.valueOf(vacationPayRate);
         this.payPeriodStart = payPeriodStart;
         this.payPeriodEnd = payPeriodEnd;
@@ -51,7 +50,7 @@ public class PayStub {
     }
 
     public void calculateAll() {
-        calculateHourlyPay();
+        calculateTotalHourlyPay();
         calculateVacationPay();
         calculateGrossPay();
         calculateCPP();
@@ -60,16 +59,20 @@ public class PayStub {
         calculateNetPay();
     }
 
-    private void calculateHourlyPay() {
-        this.hourlyPay = this.hoursWorked.multiply(this.hourlyRate);
+    private void calculateTotalHourlyPay() {
+        BigDecimal sum = BigDecimal.ZERO;
+        for (EarningSlice s : earningSlices) {
+            sum = sum.add(s.getSubtotalHourlyPay());
+        }
+        this.totalHourlyPay = sum;
     }
 
     private void calculateVacationPay() {
-        this.vacationPay = this.hourlyPay.multiply(this.vacationPayRate);
+        this.vacationPay = this.totalHourlyPay.multiply(this.vacationPayRate);
     }
 
     private void calculateGrossPay() {
-        this.grossPay = this.hourlyPay.add(this.vacationPay).setScale(2, RM);
+        this.grossPay = this.totalHourlyPay.add(this.vacationPay).setScale(2, RM);
     }
 
     private void calculateCPP() {
