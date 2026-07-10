@@ -3,7 +3,7 @@ plugins {
     id("application")
 }
 
-group = "org.example"
+group = "org.payroll"
 version = "1.0-SNAPSHOT"
 
 repositories {
@@ -21,7 +21,6 @@ dependencies {
 }
 
 application {
-    // <-- set this to your real fully-qualified main class
     mainClass.set("org.payroll.Main")
 }
 
